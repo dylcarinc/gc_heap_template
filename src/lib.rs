@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
+use core::num;
 use core::ops::{Index, IndexMut};
 use core::result::Result;
 
@@ -51,7 +52,15 @@ impl<const MAX_BLOCKS: usize> BlockTable<MAX_BLOCKS> {
     }
 
     fn available_block(&self) -> Option<usize> {
-        todo!("Return the lowest numbered unused block");
+        //todo!("Return the lowest numbered unused block");
+        let mut i = 0;
+        while i < MAX_BLOCKS {
+            if !self.block_info[i].is_some() {
+                return Some(i);
+            }
+            i +=1;
+        }
+        return None;
     }
 
     fn blocks_in_use(&self) -> impl Iterator<Item = usize> + '_ {
@@ -64,7 +73,7 @@ impl<const MAX_BLOCKS: usize> BlockTable<MAX_BLOCKS> {
     }
 
     fn address(&self, p: Pointer) -> Result<usize, HeapError> {
-        todo!("Find the address, i.e., start + offset, for the Pointer `p`");
+        //todo!("Find the address, i.e., start + offset, for the Pointer `p`");
         // Outline
         //
         // 1. If p has a block number that would be an illegal array access, report IllegalBlock.
@@ -72,6 +81,20 @@ impl<const MAX_BLOCKS: usize> BlockTable<MAX_BLOCKS> {
         // 3. If p's block has an offset that exceeds the size of our block, report OffsetTooBig.
         // 4. If p's block size is different than our block in the table, report MisalignedPointer.
         // 5. If none of those errors arises, return the start plus the offset.
+        if p.block_num() >= MAX_BLOCKS{
+            return  Err(HeapError::IllegalBlock(p.block_num(), MAX_BLOCKS-1));
+        }
+        if self.block_info[p.block_num()].is_none() {
+            return Err(HeapError::UnallocatedBlock(p.block_num()));
+        }
+        if p.offset() >= self.block_info[p.block_num()].unwrap().size {
+            return Err(HeapError::OffsetTooBig(p.offset(), p.block_num(), self.block_info[p.block_num()].unwrap().size));
+        }
+        if p.len() != self.block_info[p.block_num()].unwrap().size{
+            return  Err(HeapError::MisalignedPointer(p.len(), self.block_info[p.block_num()].unwrap().size, p.block_num()));
+        }
+        return  Ok(self.block_info[p.block_num()].unwrap().start + p.offset())
+
     }
 
     fn allocated_block_ptr(&self, block: usize) -> Option<Pointer> {
@@ -101,21 +124,45 @@ impl<const HEAP_SIZE: usize> RamHeap<HEAP_SIZE> {
     }
 
     fn load(&self, address: usize) -> Result<u64, HeapError> {
-        todo!("Return contents of heap at the given address. If address is illegal report it.");
+        //todo!("Return contents of heap at the given address. If address is illegal report it.");
+        if address >= self.next_address {
+            return Err(HeapError::IllegalAddress(address, self.next_address));
+        } else{
+            return Ok(self.heap[address]);
+        }
     }
 
     fn store(&mut self, address: usize, value: u64) -> Result<(), HeapError> {
-        todo!("Store value in heap at the given address. If address is illegal report it.");
+        //todo!("Store value in heap at the given address. If address is illegal report it.");
+        if address > self.next_address {
+            return Err(HeapError::IllegalAddress(address, self.next_address));
+        }
+        else{
+            self.heap[address] = value;
+            return Ok(());
+        }
     }
 
     fn malloc(&mut self, num_words: usize) -> Result<usize, HeapError> {
-        todo!("Perform basic malloc");
+        //todo!("Perform basic malloc");
         // Outline
         //
         // If the request is of size zero, report ZeroSizeRequest
         // Otherwise, calculate the address that will be given for the request to follow.
         // If that exceeds the heap size, report OutOfMemory
         // Otherwise, update `self.next_address` and return the address of the newly allocated memory.
+        if num_words == 0{
+            return Err(HeapError::ZeroSizeRequest);
+        }
+        else if self.next_address + num_words > HEAP_SIZE {
+            return Err(HeapError::OutOfMemory);
+
+        }
+        else{
+            let address = self.next_address;
+            self.next_address = self.next_address + num_words;
+            return Ok(address);
+        }
     }
 
     fn copy(&self, src: &BlockInfo, dest: &mut Self) -> Result<BlockInfo, HeapError> {
