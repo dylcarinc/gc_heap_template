@@ -166,12 +166,21 @@ impl<const HEAP_SIZE: usize> RamHeap<HEAP_SIZE> {
     }
 
     fn copy(&self, src: &BlockInfo, dest: &mut Self) -> Result<BlockInfo, HeapError> {
-        todo!("Copy memory contents from src to dest");
+        //todo!("Copy memory contents from src to dest");
         // Outline
         //
         // Perform a malloc() in dest of the block's size.
         // Store every value from src's block in dest's block.
         // Return updated block information, including the starting address and an updated number of copies.
+        let address = dest.malloc(src.size).unwrap();
+        let mut i = 0;
+        while i < src.size{
+            dest.heap[address + i] = self.heap[src.start + i];
+            i += 1;
+        }
+        return Ok(
+            BlockInfo {start: address, size: src.size, num_times_copied: src.num_times_copied +1}
+        );
     }
 }
 
@@ -248,7 +257,7 @@ impl<const HEAP_SIZE: usize, const MAX_BLOCKS: usize> CopyingHeap<HEAP_SIZE, MAX
         let inactive = (self.active_heap + 1) % 2;
         let (src, dest) =
             independent_elements_from(self.active_heap, inactive, &mut self.heaps).unwrap();
-        todo!("Implement copying collection.");
+        //todo!("Implement copying collection.");
         // Outline
         //
         // 1. Run the `trace()` method of the `tracer` to find blocks in use.
@@ -256,6 +265,25 @@ impl<const HEAP_SIZE: usize, const MAX_BLOCKS: usize> CopyingHeap<HEAP_SIZE, MAX
         //    * Copy the block from `src` to `dest`.
         // 3. Clear the active heap.
         // 4. Set `self.active_heap` to point at the newly active heap.
+        let mut blocks_used: [bool; MAX_BLOCKS] = [false; MAX_BLOCKS];
+        tracer.trace(&mut blocks_used);
+        let mut updated_blocks = BlockTable::<MAX_BLOCKS>::new();
+        let mut i = 0;
+        while i < MAX_BLOCKS {
+            if blocks_used[i]{
+                if let Some(src_block_info) = self.block_info[i] {
+                    let mut new_block_info = src.copy(&src_block_info, dest)?;
+                    new_block_info.num_times_copied = 0; 
+                    updated_blocks[i] = Some(new_block_info);
+                }
+            }
+            i += 1;
+        }
+        src.clear();
+        self.block_info = updated_blocks;
+        self.active_heap = inactive;
+        Ok(())
+
     }
 }
 
@@ -303,7 +331,7 @@ impl<const HEAP_SIZE: usize, const MAX_BLOCKS: usize> GarbageCollectingHeap
         num_words: usize,
         tracer: &T,
     ) -> Result<Pointer, HeapError> {
-        todo!("Implement malloc");
+        //todo!("Implement malloc");
         // Outline
         //
         // 1. Find an available block number
@@ -314,6 +342,35 @@ impl<const HEAP_SIZE: usize, const MAX_BLOCKS: usize> GarbageCollectingHeap
         //    * If no space is still available, report out of memory.
         // 3. Create entry in the block table for the newly allocated block.
         // 4. Return a pointer to the newly allocated block.
+        if num_words == 0 {
+            return Err(HeapError::ZeroSizeRequest);
+        }
+        let block_num = match self.block_info.available_block() {
+            Some(block_num) => block_num,
+            None => match self.collect(tracer) {
+                Ok(_) => match self.block_info.available_block() {
+                    Some(block_num) => block_num,
+                    None => return Err(HeapError::OutOfBlocks),
+                },
+                Err(_) => return Err(HeapError::OutOfBlocks),
+            },
+        };
+        let address = match self.heaps[self.active_heap].malloc(num_words) {
+            Ok(adr) => adr,
+            Err(_) => match self.collect(tracer) {
+                Ok(_) => match self.heaps[self.active_heap].malloc(num_words) {
+                    Ok(adr) => adr,
+                    Err(_) => return Err(HeapError::OutOfMemory),
+                },
+                Err(_) => return Err(HeapError::OutOfMemory),
+            },
+        };
+        self.block_info[block_num] = Some(BlockInfo {
+            start: address,
+            size: num_words,
+            num_times_copied: 0,
+        });
+        Ok(Pointer::new(block_num, num_words)) 
     }
 
     fn assert_no_strays(&self) {
